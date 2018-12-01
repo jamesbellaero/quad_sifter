@@ -38,18 +38,21 @@ int main(int argc, char** argv){
     std::vector<std::vector<cv::Point>> contoursB;
     cv::findContours(maskB,contours,cv::RETR_EXTERNAL,cv::CHAIN_APPROX_SIMPLE);
     double maxArea = 0;
-    std::vector<cv::Point> contB;
+    int contIdx;
     for(int i=0;i<candidateContoursB.size();i++){
       if(cv::contourArea(candidateContoursB[i])>maxArea){
-        contB = candidateContoursB[i];
+        contIdx;
         maxArea=cv::contourArea(contB);
       }
     }
     //Get bitmask for everything inside the contour
-
+    cv::Mat maskCont(maskB.rows,maskB.cols,CV_8UC1);
+    Scalar color(255);
+    cv::drawContours(maskCont,contoursB,contIdx,color,CV_FILLED,FILLED);
+    
     //keep only the tsuff inside the contour that isn't blue
     cv::Mat mask(maskB.rows,maskB.cols,CV_8UC1);
-    maskB.copyTo(mask,maskCont);
+    maskCont.copyTo(mask,255-maskB);
 
     cv::Mat imgGrayCont(imgGray.rows,imgGray.cols,CV_8UC1);
     imgGray.copyTo(imgGrayCont,mask);
