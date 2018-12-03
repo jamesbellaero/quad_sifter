@@ -6,12 +6,13 @@
 #include <opencv2/xfeatures2d.hpp>
 #include <string>
 #include <iostream>
+#include <math.h>
 #include <stdio.h>
 #include <unistd.h>
 #include <vector>
 
 int main(int argc, char** argv){
-  std::string file_dir = "/mnt/c/Users/James/Desktop/imgs";
+  std::string file_dir = "/mnt/c/Users/James/Desktop/imgs/";
   std::string file_prefix = "left";
   std::string file_suffix = ".jpg";
   int file_num = 0;
@@ -20,14 +21,16 @@ int main(int argc, char** argv){
   
   cv::Mat descriptorHist;
   std::vector<int> matchCountHist;
-  cv::Ptr<cv::Feature2D> sifter = xfeatures2d::SIFT::create();
-  bool first;
-  cv::Scalar blueLower(100,100,100);
-  cv::Scalar blueUpper(140,255,255);
-
-  while(access(file_name,F_OK)){
+  cv::Ptr<cv::Feature2D> sifter = cv::xfeatures2d::SIFT::create();
+  bool first = true;
+  cv::Scalar blueLower(90,90,90);
+  cv::Scalar blueUpper(150,255,255);
+  
+  while(access(file_name,R_OK)==0){
     const std::string img_path = std::string(file_name);
+    std::cout<<file_name<<std::endl;
     cv::Mat img = cv::imread(img_path);//Probably BGR
+    
     /*DO IMAGE PROCESSING HERE*/
     cv::Mat imgHsv, imgGray, maskB;
     cv::cvtColor(img,imgHsv,cv::COLOR_BGR2HSV);
@@ -38,25 +41,42 @@ int main(int argc, char** argv){
     //Get max contour for blue area
     std::vector<std::vector<cv::Point>> contours;
     cv::findContours(maskB,contours,cv::RETR_EXTERNAL,cv::CHAIN_APPROX_SIMPLE);
+    if(contours.size()==0){
+      sprintf(file_name, (file_dir+file_prefix+std::string("%04d")+file_suffix).c_str(),file_num++);
+      
+      continue;
+    }
     double maxArea = 0;
-    int contIdx;
+    int contIdx = 0;
+    std::cout<<contours.size()<<" contours"<<std::endl;
     for(int i=0;i<contours.size();i++){
       if(cv::contourArea(contours[i])>maxArea){
-        contIdx;
+        contIdx = i;
         maxArea=cv::contourArea(contours[i]);
       }
     }
+    std::cout<<maxArea<<" max area"<<std::endl;
+    if(maxArea<100){
+      sprintf(file_name, (file_dir+file_prefix+std::string("%04d")+file_suffix).c_str(),file_num++);
+      continue;
+    }
+    
     //Get bitmask for everything inside the contour
     cv::Mat maskCont(maskB.rows,maskB.cols,CV_8UC1);
     cv::Scalar color(255);
-    cv::drawContours(maskCont,contours,contIdx,color,CV_FILLED,cv::LineTypes::FILLED);
+    cv::drawContours(maskCont,contours,contIdx,color,CV_FILLED);
 
     //keep only the tsuff inside the contour that isn't blue
-    cv::Mat mask(maskB.rows,maskB.cols,CV_8UC1);
-    maskCont.copyTo(mask,255-maskB);
+    cv::Mat maskTemp(maskB.rows,maskB.cols,CV_8UC1);
+    maskCont.copyTo(maskTemp,255-maskB);
+    cv::Mat mask(maskB.size(),CV_8UC1);
+    cv::inRange(maskTemp,254,255,mask); //For some reason, they weren't all zero or 255
 
     cv::Mat imgGrayCont(imgGray.rows,imgGray.cols,CV_8UC1);
     imgGray.copyTo(imgGrayCont,mask);
+
+    // imshow("imgGrayCont",imgGrayCont);
+    // cv::waitKey(0);
     
     //-- Step 1: Detect the keypoints:
     std::vector<cv::KeyPoint> keypoints;    
@@ -66,11 +86,13 @@ int main(int argc, char** argv){
     cv::Mat descriptors;    
     sifter->compute( img, keypoints, descriptors );
     if(first){
-      for(int i=0;i++;i<descriptors.size()){
-        matchCountHist.push_back(0);
-        descriptorHist.push_back(descriptors.at(i));
+      descriptorHist.create(descriptors.size(),descriptors.type());
+      for(int i=0;i<descriptors.rows;i++){
+        matchCountHist.push_back(1);
+        descriptors.row(i).copyTo(descriptorHist.row(i));
       }
       first = false;
+      sprintf(file_name, (file_dir+file_prefix+std::string("%04d")+file_suffix).c_str(),file_num++);
       continue;
     }
     //-- Step 3: Matching descriptor vectors using BFMatcher :
@@ -78,15 +100,19 @@ int main(int argc, char** argv){
     std::vector< cv::DMatch > matches;
     matcher.match( descriptorHist, descriptors, matches );
     // Add on new descriptors
-    int matched[descriptors.size()];
+    int matched[descriptors.rows];
+    int unmatched = 0;
     for(int i=0;i<matches.size();i++){
       matchCountHist[matches[i].trainIdx]++;//or queryIdx or imgIdx
       matched[matches[i].queryIdx] = 1;
+      unmatched++;
     }
-    for(int i=0;i<descriptors.size();i++){
+    int oldSize = descriptorHist.rows;
+    descriptorHist.resize(descriptorHist.rows+unmatched,descriptorHist.cols);
+    for(int i=0;i<descriptors.rows;i++){
       if(matched[i]==0){
         matchCountHist.push_back(0);
-        descriptorHist.push_back(descriptors.at(i));
+        descriptors.row(i).copyTo(descriptorHist.row(oldSize + i));
       }
     }
 
