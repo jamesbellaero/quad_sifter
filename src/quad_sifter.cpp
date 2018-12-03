@@ -5,6 +5,7 @@
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/xfeatures2d.hpp>
 #include <string>
+#include <fstream>
 #include <iostream>
 #include <math.h>
 #include <stdio.h>
@@ -12,12 +13,13 @@
 #include <vector>
 
 int main(int argc, char** argv){
-  std::string file_dir = "/mnt/c/Users/James/Desktop/imgs/";
-  std::string file_prefix = "left";
-  std::string file_suffix = ".jpg";
+  const std::string file_dir = "/mnt/c/Users/James/Desktop/imgs/";
+  const std::string file_prefix = "left";
+  const std::string file_suffix = ".jpg";
+  const std::string file_regex = "%04d";
   int file_num = 0;
   char file_name[file_dir.length()+file_prefix.length()+4+file_suffix.length()];
-  sprintf(file_name, (file_dir+file_prefix+std::string("%04d")+file_suffix).c_str(),file_num++);
+  sprintf(file_name, (file_dir+file_prefix+file_regex+file_suffix).c_str(),file_num++);
   
   cv::Mat descriptorHist;
   std::vector<int> matchCountHist;
@@ -80,11 +82,10 @@ int main(int argc, char** argv){
     
     //-- Step 1: Detect the keypoints:
     std::vector<cv::KeyPoint> keypoints;    
-    sifter->detect( img, keypoints, mask);
-
+    sifter->detect( imgGrayCont, keypoints, mask);
     //-- Step 2: Calculate descriptors (feature vectors)    
     cv::Mat descriptors;    
-    sifter->compute( img, keypoints, descriptors );
+    sifter->compute( imgGrayCont, keypoints, descriptors );
     if(first){
       descriptorHist.create(descriptors.size(),descriptors.type());
       for(int i=0;i<descriptors.rows;i++){
@@ -98,32 +99,60 @@ int main(int argc, char** argv){
     //-- Step 3: Matching descriptor vectors using BFMatcher :
     cv::BFMatcher matcher;
     std::vector< cv::DMatch > matches;
-    matcher.match( descriptorHist, descriptors, matches );
+    matcher.match( descriptors, descriptorHist, matches );
     // Add on new descriptors
     int matched[descriptors.rows];
-    int unmatched = 0;
+    for(int i=0;i<descriptors.rows;i++){
+      matched[i] = 0;
+    }
+
     for(int i=0;i<matches.size();i++){
       matchCountHist[matches[i].trainIdx]++;//or queryIdx or imgIdx
       matched[matches[i].queryIdx] = 1;
-      unmatched++;
     }
-    int oldSize = descriptorHist.rows;
-    descriptorHist.resize(descriptorHist.rows+unmatched,descriptorHist.cols);
+    volatile int unmatched = descriptors.rows;
     for(int i=0;i<descriptors.rows;i++){
-      if(matched[i]==0){
-        matchCountHist.push_back(0);
-        descriptors.row(i).copyTo(descriptorHist.row(oldSize + i));
+      unmatched -= matched[i];
+    }
+    
+
+    int oldSize = descriptorHist.rows;
+    if(unmatched>0){
+      descriptorHist.resize(descriptorHist.rows+unmatched,descriptorHist.cols);
+      int copied = 0;
+      for(int i=0;i<descriptors.rows;i++){
+        if(matched[i]==0){
+          matchCountHist.push_back(0);
+          descriptors.row(i).copyTo(descriptorHist.row(oldSize + copied++));
+        }
+      }
+    }
+    sprintf(file_name, "/mnt/c/Users/James/Desktop/imgs/left%04d.jpg",file_num++);
+  }
+
+  std::ofstream countLogger, descriptorLogger;
+  countLogger.open("/mnt/c/Users/James/Desktop/imgs/counts.txt",std::ofstream::out);
+  descriptorLogger.open("/mnt/c/Users/James/Desktop/imgs/descriptors.txt",std::ofstream::out);
+  for(int i=0;i<matchCountHist.size();i++){
+    std::cout<<matchCountHist[i]<<"\t";
+    countLogger<<matchCountHist[i];
+    
+    for(int j=0;j<descriptorHist.cols;j++){
+      descriptorLogger<<descriptorHist.at<float>(i,j);
+      if(j<descriptorHist.cols-1){
+        descriptorLogger<<",";
       }
     }
 
-
-    sprintf(file_name, (file_dir+file_prefix+std::string("%04d")+file_suffix).c_str(),file_num++);
+    if(i<matchCountHist.size()-1){
+      countLogger<<",";
+      descriptorLogger<<std::endl;
+    }
   }
-  for(int i=0;i<matchCountHist.size();i++){
-    std::cout<<matchCountHist[i]<<"\t";
-  }
+  countLogger.close();
+  descriptorLogger.close();
   std::cout<<std::endl;
-
+  
 }
 
 
